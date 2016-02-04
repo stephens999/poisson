@@ -6,11 +6,13 @@ title: "Home"
 
 **Code version:** `r system("git log -1 --format='%H'", intern = TRUE)`
 
-## Tutorials
 
-*  [Making a project site](tutorial.html) ([2015-12-12 lab meeting slides](../docs/repo-setup-tutorial-stephens-lab-2015-12-03.pdf))
+# A look at Poisson likelihoood approximations
 
+* [Some simple plots](poisson_loglik.html)
 
-## Using Rmardown to document anaysis: An example
+# Voom
 
-*  [Use PCA to visualize some single-cell data](single-cell-pca.html)
+*  [Applying voom to independent genes: original simulation scheme](voom.html)
+*  [Applying voom to independent genes: a different simulation scheme](voom2.html)
+*  [Applying voom to dependent null genes: problems with confoundign/correlation ](voom_null.html)

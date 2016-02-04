@@ -1,0 +1,161 @@
+---
+title: "A look at voom on simulated data, 2"
+author: "M Stephens, modifying code from voom1.rmd by Mengyin Lu"
+date: 2016-02-03
+---
+
+**Last updated:** `r Sys.Date()`
+
+**Code version:** `r system("git log -1 --format='%H'", intern = TRUE)`
+
+```{r chunk-options, include=FALSE}
+source("chunk-options.R")
+```
+
+This does the same as [voom1.html](voom1.html) but with a different way of simulating the alternative genes. This is to test my hypothesis that
+the results in [voom1.html](voom1.html) are due to induced effects due to differences in library size. The crucial change is use of countmat3 instead of countmat2 below.
+
+Define functions to generate an RNA-seq count matrix (with 2 conditions) and compute betahat (estimated effect size)  & sebetahat (standard error):
+```{r}
+library(limma)
+library(edgeR)
+library(qvalue)
+library(ashr)
+
+# Generate count matrix
+# counts 1 is G by N1 
+# counts 2 is G by N2
+# note that unlike countmat2 it doesn't filter out low expressed genes - assumes this already done
+countmat3 = function(counts1, counts2, Nnull, Nalt, Nsamp){
+  
+  if(nrow(counts1)!=nrow(counts2)){stop("counts1 and counts2 must have same rows")}
+  
+  # Select Nnull genes to be null
+  # Randomly select 2*Nsamp samples from these rows of counts1, separately for each gene (so uncorrelated)
+  nullrows = sample(1:nrow(counts1),Nnull)
+  null = t(apply(counts1[nullrows,], 1, sampleingene, Nsamp=2*Nsamp))
+  
+  counts1 = counts1[-nullrows,]
+  counts2 = counts2[-nullrows,]
+  altrows = sample(1:nrow(counts1),Nalt)
+  counts1 = counts1[altrows,]
+  counts2 = counts2[altrows,]
+
+  altrows1 = sample(nrow(counts1),Nalt/2) #split alternatives into two types. 
+  #one will use counts1, counts2 ; the other will use counts2, counts1
+  
+  alt1 = cbind(t(apply(counts1[altrows1,],1, sampleingene, Nsamp)),
+               t(apply(counts2[altrows1,],1, sampleingene, Nsamp)))
+  alt2 = cbind(t(apply(counts2[-altrows1,],1, sampleingene, Nsamp)),
+               t(apply(counts1[-altrows1,],1, sampleingene, Nsamp)))
+  
+  counts = rbind(null,alt1,alt2)
+
+  null = c(rep(1,Nnull),rep(0,Nalt))
+  
+  # Split: first half samples as group A, second half samples as group B 
+  condition = factor(rep(c(1,2),each=Nsamp))
+  
+  return(list(counts=counts,condition=condition,null=null)) 
+}
+
+# Sample individuals for each gene
+sampleingene = function(gene, Nsamp){
+  sample = sample(length(gene), Nsamp)
+  return(c(gene[sample]))
+}
+
+# Voom transformation
+voom_transform = function(counts, condition, W=NULL){
+  dgecounts = calcNormFactors(DGEList(counts=counts,group=condition))
+  #dgecounts = DGEList(counts=counts,group=condition)
+  if (is.null(W)){
+    design = model.matrix(~condition)
+  }else{
+    design = model.matrix(~condition+W)
+  }
+  
+  v = voom(dgecounts,design,plot=FALSE)
+  lim = lmFit(v)
+  betahat.voom = lim$coefficients[,2]
+  sebetahat.voom = lim$stdev.unscaled[,2]*lim$sigma
+  df.voom = length(condition)-2-!is.null(W)
+  
+  return(list(betahat=betahat.voom, sebetahat=sebetahat.voom, df=df.voom, v=v))
+}
+
+# Log(counts+1) + simple linear regression
+logc = function(counts, condition){
+  logcounts = log(counts+1)
+  design = model.matrix(~condition)
+  lim = lmFit(logcounts,design)
+  betahat = lim$coefficients[,2]
+  sebetahat = lim$sigma*lim$stdev.unscaled[,2]
+  df = length(condition)-2
+  return(list(betahat=betahat,sebetahat=sebetahat,df=df))
+}
+```
+
+Generate a dataset with 5000 genes (90% nulls and 10% alternatives). For each null gene we randomly select 100 GTEx lung samples and split them into two groups (50 samples for each group). For each alternative gene we randomly select 50 lung samples and 50 liver samples. All genes are independent from each other due to the sampling procedure. This is to see how
+things behave in the idealized setting of no correlations.
+```{r}
+set.seed(198)
+lungdata = read.table("../data/Lung.txt")
+liverdata = read.table("../data/Liver.txt")
+top_genes_index=function(g,X){return(order(rowSums(X),decreasing =TRUE)[1:g])}
+subset = top_genes_index(10000,cbind(lungdata,liverdata)) #select top 10k expressed genes
+data = countmat3(lungdata[subset,], liverdata[subset,], Nsamp=50, Nnull=4500, Nalt=500)
+```
+
+Try voom on the mixed dataset (90% null and 10% alternatives) and the pure null subset:
+```{r}
+# voom on mixed data (90% null)
+voom = voom_transform(data$counts, data$condition)
+pval.voom = 2*(1-pt(abs(voom$betahat/voom$sebetahat),df=voom$df))
+
+# voom on the pure null part
+voom.null = voom_transform(data$counts[data$null==1,], data$condition)
+pval.voom.null = 2*(1-pt(abs(voom.null$betahat/voom.null$sebetahat),df=voom.null$df))
+```
+
+Histograms of voom's p-values: p-values are uniformly distributed if all genes are nulls. However, once we add some alternative genes into the dataset and perform voom transformation on the whole mixed dataset, the p-values of null genes are no longer uniform! (Null genes' estimated effect sizes shift but standard errors hardly change)
+```{r}
+hist(pval.voom.null,25)
+hist(pval.voom[data$null==1],25)
+plot(voom$betahat[data$null==1],voom.null$betahat)
+abline(0,1)
+plot(voom$sebetahat[data$null==1],voom.null$sebetahat)
+abline(0,1)
+```
+
+Estimate the null proportion from voom's results by ash or qvalue: now it is closer
+to truth, suggesting that previous results in voom1.html are due to differences
+in library size. That is, the original simulation scheme was inducing effects in the "null"
+genes, and the method was detecting them - kind of correctly!
+```{r}
+a.voom = ash(voom$betahat,voom$sebetahat,df=voom$df)
+pi0.ash.voom = a.voom$fitted.g$pi[1]
+pi0.ash.voom
+
+pi0.qval.voom = qvalue(pval.voom)$pi0
+pi0.qval.voom
+```
+
+Try if log(counts+1)+OLS (David found it performed well in his simulations) or quantile normalization can fix this issue: log(counts+1)+OLS indeed gives uniform null p-values (which makes sense since it won't introduce any extra correlation or inflation). 
+```{r}
+# log(counts+1)
+logc = logc(data$counts, data$condition)
+pval.logc = 2*(1-pt(abs(logc$betahat/logc$sebetahat),df=logc$df))
+
+a.logc = ash(logc$betahat,logc$sebetahat,df=logc$df)
+pi0.ash.logc = a.logc$fitted.g$pi[1]
+pi0.ash.logc
+hist(pval.logc[data$null==1],25)
+```
+
+
+## Session information
+
+```{r info}
+sessionInfo()
+```

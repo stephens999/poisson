@@ -1,0 +1,49 @@
+---
+title: "Poisson"
+output: html_document
+---
+
+Suppose $X$ is Poi($\lambda$).
+If we see $X=x$, how good is the normal approximation to the likelihood for l=log(lambda) ?
+
+Here for x>0 we approximate poisson likelihood for l=log(lambda) by
+by normal, with mean log(x) and variance 1/x.
+
+When x=0 I chose the mean to be log(0.01) and the variance so that the approximation is accurate in range l=log(0.01) to log(1) [More precisely ratios are accurate in this range, and particularly the likelihood ratio for rate 0.01 vs 1 is "accurate"]. Could of course change from 0.01 when very small rates are of interest....
+
+```{r}
+#
+plot_poisson_loglik=function(x,range1=1,range2=1,...){
+  m = ifelse(x==0,log(0.01),log(x))
+  sd_approx = ifelse(x==0,-m/sqrt(2),exp(m)^-0.5)
+  l = m + seq(-range1,range2,length=100)
+  loglik = dpois(x,exp(l),log=TRUE)
+  plot(l, loglik-max(loglik),type="l",...)
+  abline(v=log(x))
+  normlik = log(dnorm(l,m,sd=sd_approx))
+  lines(l,normlik-max(normlik),col="red")
+}
+plot_poisson_loglik(0,main="x=0",range1=1,range2=5)
+plot_poisson_loglik(1,main="x=1")
+plot_poisson_loglik(2,main="x=2")
+```
+
+It looks, visually, like approximation is pretty good for even $x$ as small as $1$,
+but the zero case is the one that really is problematic.
+
+Could probably improve $x=1,2$ cases by using a mixture of normals.
+
+Compare with usual approximation, X is N(lambda, lambda)
+```{r}
+plot_poisson_loglik2=function(x,range1=1,range2=1,...){
+  m = ifelse(x==0,0,x)
+  sd_approx = ifelse(x==0,0,x)
+  l = log(m) + seq(-range1,range2,length=100)
+  loglik = dpois(x,exp(l),log=TRUE)
+  plot(l, loglik-max(loglik),type="l",...)
+  abline(v=log(x))
+  normlik = log(dnorm(exp(l),m,sd=sd_approx))
+  lines(l,normlik-max(normlik),col="red")
+}
+```
+
