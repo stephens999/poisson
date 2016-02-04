@@ -13,6 +13,6 @@ title: "Home"
 
 # Voom
 
-*  [Applying voom to independent genes: original simulation scheme](voom.html)
+*  [Applying voom to independent genes: original simulation scheme](voom1.html)
 *  [Applying voom to independent genes: a different simulation scheme](voom2.html)
 *  [Applying voom to dependent null genes: problems with confoundign/correlation ](voom_null.html)
