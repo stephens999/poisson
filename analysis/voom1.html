@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+
+<head>
+
+<meta charset="utf-8">
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+<meta name="generator" content="pandoc" />
+
+<meta name="author" content="Mengyin Lu, slightly modified by M Stephens" />
+
+<meta name="date" content="2016-02-03" />
+
+<title>A look at voom on simulated data</title>
+
+<script src="libs/jquery-1.11.0/jquery.min.js"></script>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link href="libs/bootstrap-3.3.1/css/united.min.css" rel="stylesheet" />
+<script src="libs/bootstrap-3.3.1/js/bootstrap.min.js"></script>
+<script src="libs/bootstrap-3.3.1/shim/html5shiv.min.js"></script>
+<script src="libs/bootstrap-3.3.1/shim/respond.min.js"></script>
+
+<style type="text/css">
+
+/* padding for bootstrap navbar */
+body {
+  padding-top: 50px;
+  padding-bottom: 40px;
+}
+
+
+/* offset scroll position for anchor links (for fixed navbar)  */
+.section h2 {
+  padding-top: 55px;
+  margin-top: -55px;
+}
+.section h3 {
+  padding-top: 55px;
+  margin-top: -55px;
+}
+
+
+
+/* don't use link color in navbar */
+.dropdown-menu>li>a {
+  color: black;
+}
+
+/* some padding for disqus */
+#disqus_thread {
+  margin-top: 45px;
+}
+
+</style>
+
+<link rel="stylesheet" href="libs/font-awesome-4.1.0/css/font-awesome.min.css"/>
+
+<style type="text/css">code{white-space: pre;}</style>
+<link rel="stylesheet"
+      href="libs/highlight/textmate.css"
+      type="text/css" />
+<script src="libs/highlight/highlight.js"></script>
+<style type="text/css">
+  pre:not([class]) {
+    background-color: white;
+  }
+</style>
+<script type="text/javascript">
+if (window.hljs && document.readyState && document.readyState === "complete") {
+   window.setTimeout(function() {
+      hljs.initHighlighting();
+   }, 0);
+}
+</script>
+
+
+
+</head>
+
+<body>
+
+<style type = "text/css">
+.main-container {
+  max-width: 940px;
+  margin-left: auto;
+  margin-right: auto;
+}
+code {
+  color: inherit;
+  background-color: rgba(0, 0, 0, 0.04);
+}
+img { 
+  max-width:100%; 
+  height: auto; 
+}
+</style>
+<div class="container-fluid main-container">
+
+
+<div class="navbar navbar-default navbar-fixed-top" role="navigation">
+  <div class="container">
+    <div class="navbar-header">
+      <button type="button" class="navbar-toggle collapsed" data-toggle="collapse" data-target="#navbar">
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+      </button>
+      <a class="navbar-brand" href="index.html">ashlar</a>
+    </div>
+    <div id="navbar" class="navbar-collapse collapse">
+      <ul class="nav navbar-nav">
+        <li><a href="index.html">Home</a></li>
+        <li><a href="about.html">About</a></li>
+        <li><a href="license.html">License</a></li>
+        <li><a href="https://github.com/jhsiao999/ashlar">GitHub</a></li>
+    </div><!--/.nav-collapse -->
+  </div><!--/.container -->
+</div><!--/.navbar -->
+
+<div id="header">
+<h1 class="title">A look at voom on simulated data</h1>
+<h4 class="author"><em>Mengyin Lu, slightly modified by M Stephens</em></h4>
+<h4 class="date"><em>2016-02-03</em></h4>
+</div>
+
+<div id="TOC">
+<ul>
+<li><a href="#session-information">Session information</a></li>
+</ul>
+</div>
+
+<p><strong>Last updated:</strong> 2016-02-04</p>
+<p><strong>Code version:</strong> cc743de0ed77120abe5ff470019987f7f7ba20fe</p>
+<p>Define functions to generate an RNA-seq count matrix (with 2 conditions) and compute betahat (estimated effect size) &amp; sebetahat (standard error):</p>
+<pre class="r"><code>library(limma)
+library(edgeR)
+library(qvalue)</code></pre>
+<pre><code>Warning: replacing previous import by &#39;grid::arrow&#39; when loading &#39;qvalue&#39;</code></pre>
+<pre><code>Warning: replacing previous import by &#39;grid::unit&#39; when loading &#39;qvalue&#39;</code></pre>
+<pre class="r"><code>library(ashr)
+
+# Generate count matrix
+countmat2 = function(counts1, counts2, Ngene, Nsamp, nullpi){
+  # For each gene, randomly select 2*Nsamp samples from counts1 (condition 1)
+  # and Nsamp samples from counts2 (condition 2)
+  counts1 = t(apply(counts1, 1, sampleingene, Nsamp=2*Nsamp))
+  counts2 = t(apply(counts2, 1, sampleingene, Nsamp=Nsamp))
+  counts = cbind(counts1,counts2)
+  
+  # Remove genes without any reads
+  counts = counts[apply(counts,1,sum)&gt;0,]
+  
+  # Take the top Ngene high-expressed genes
+  counts = counts[sort(order(rowSums(counts),decreasing=TRUE)[1:Ngene]),]
+  
+  # The first nullpi% genes are nulls: use the 2*Nsamp samples from condition 1
+  # The rest (1-nullpi)% gnes are alternatives: use the first Nsamp samples from condition 1
+  # and the Nsamp samples from condition 2
+  counts = rbind(counts[1:(Ngene*nullpi),1:(2*Nsamp)],
+                 counts[(Ngene*nullpi+1):Ngene,c(1:Nsamp,(2*Nsamp+1):(3*Nsamp))])
+  null = c(rep(1,Ngene*nullpi),rep(0,Ngene-Ngene*nullpi))
+  
+  # Split: first half samples as group A, second half samples as group B 
+  condition = factor(rep(c(1,2),each=Nsamp))
+  
+  return(list(counts=counts,condition=condition,null=null)) 
+}
+
+# Sample individuals for each gene
+sampleingene = function(gene, Nsamp){
+  sample = sample(length(gene), Nsamp)
+  return(c(gene[sample]))
+}
+
+# Voom transformation
+voom_transform = function(counts, condition, W=NULL){
+  dgecounts = calcNormFactors(DGEList(counts=counts,group=condition))
+  #dgecounts = DGEList(counts=counts,group=condition)
+  if (is.null(W)){
+    design = model.matrix(~condition)
+  }else{
+    design = model.matrix(~condition+W)
+  }
+  
+  v = voom(dgecounts,design,plot=FALSE)
+  lim = lmFit(v)
+  betahat.voom = lim$coefficients[,2]
+  sebetahat.voom = lim$stdev.unscaled[,2]*lim$sigma
+  df.voom = length(condition)-2-!is.null(W)
+  
+  return(list(betahat=betahat.voom, sebetahat=sebetahat.voom, df=df.voom, v=v))
+}
+
+# Log(counts+1) + simple linear regression
+logc = function(counts, condition){
+  logcounts = log(counts+1)
+  design = model.matrix(~condition)
+  lim = lmFit(logcounts,design)
+  betahat = lim$coefficients[,2]
+  sebetahat = lim$sigma*lim$stdev.unscaled[,2]
+  df = length(condition)-2
+  return(list(betahat=betahat,sebetahat=sebetahat,df=df))
+}</code></pre>
+<p>Generate a dataset with 5000 genes (90% nulls and 10% alternatives). For each null gene we randomly select 100 GTEx lung samples and split them into two groups (50 samples for each group). For each alternative gene we randomly select 50 lung samples and 50 liver samples. All genes are independent from each other due to the sampling procedure.</p>
+<pre class="r"><code>set.seed(198)
+lungdata = read.table(&quot;../data/Lung.txt&quot;)
+liverdata = read.table(&quot;../data/Liver.txt&quot;)
+data = countmat2(lungdata, liverdata, Ngene=5000, Nsamp=50, nullpi=0.9)</code></pre>
+<p>Try voom on the mixed dataset (90% null and 10% alternatives) and the pure null subset:</p>
+<pre class="r"><code># voom on mixed data (90% null)
+voom = voom_transform(data$counts, data$condition)
+pval.voom = 2*(1-pt(abs(voom$betahat/voom$sebetahat),df=voom$df))
+
+# voom on the pure null part
+voom.null = voom_transform(data$counts[data$null==1,], data$condition)
+pval.voom.null = 2*(1-pt(abs(voom.null$betahat/voom.null$sebetahat),df=voom.null$df))</code></pre>
+<p>Histograms of voom’s p-values: p-values are uniformly distributed if all genes are nulls. However, once we add some alternative genes into the dataset and perform voom transformation on the whole mixed dataset, the p-values of null genes are no longer uniform! (Null genes’ estimated effect sizes shift but standard errors hardly change)</p>
+<pre class="r"><code>hist(pval.voom.null,25)</code></pre>
+<p><img src="figure/voom1.Rmd/unnamed-chunk-4-1.png" title="" alt="" width="672" style="display: block; margin: auto;" /></p>
+<pre class="r"><code>hist(pval.voom[data$null==1],25)</code></pre>
+<p><img src="figure/voom1.Rmd/unnamed-chunk-4-2.png" title="" alt="" width="672" style="display: block; margin: auto;" /></p>
+<pre class="r"><code>plot(voom$betahat[data$null==1],voom.null$betahat)
+abline(0,1)</code></pre>
+<p><img src="figure/voom1.Rmd/unnamed-chunk-4-3.png" title="" alt="" width="672" style="display: block; margin: auto;" /></p>
+<pre class="r"><code>plot(voom$sebetahat[data$null==1],voom.null$sebetahat)
+abline(0,1)</code></pre>
+<p><img src="figure/voom1.Rmd/unnamed-chunk-4-4.png" title="" alt="" width="672" style="display: block; margin: auto;" /></p>
+<p>Estimate the null proportion from voom’s results by ash or qvalue: significantly underestimate it (much lower than the true setting: 90%)!!!!</p>
+<pre class="r"><code>a.voom = ash(voom$betahat,voom$sebetahat,df=voom$df)
+pi0.ash.voom = a.voom$fitted.g$pi[1]
+pi0.ash.voom</code></pre>
+<pre><code>[1] 0.5326329</code></pre>
+<pre class="r"><code>pi0.qval.voom = qvalue(pval.voom)$pi0
+pi0.qval.voom</code></pre>
+<pre><code>[1] 0.7681244</code></pre>
+<p>Try if log(counts+1)+OLS (David found it performed well in his simulations) or quantile normalization can fix this issue: log(counts+1)+OLS indeed gives uniform null p-values (which makes sense since it won’t introduce any extra correlation or inflation).</p>
+<pre class="r"><code># log(counts+1)
+logc = logc(data$counts, data$condition)
+pval.logc = 2*(1-pt(abs(logc$betahat/logc$sebetahat),df=logc$df))
+
+a.logc = ash(logc$betahat,logc$sebetahat,df=logc$df)
+pi0.ash.logc = a.logc$fitted.g$pi[1]
+pi0.ash.logc</code></pre>
+<pre><code>[1] 0.8833165</code></pre>
+<pre class="r"><code>hist(pval.logc[data$null==1],25)</code></pre>
+<p><img src="figure/voom1.Rmd/unnamed-chunk-6-1.png" title="" alt="" width="672" style="display: block; margin: auto;" /></p>
+<div id="session-information" class="section level2">
+<h2>Session information</h2>
+<pre class="r"><code>sessionInfo()</code></pre>
+<pre><code>R version 3.2.3 (2015-12-10)
+Platform: x86_64-apple-darwin13.4.0 (64-bit)
+Running under: OS X 10.11.2 (El Capitan)
+
+locale:
+[1] en_US.UTF-8/en_US.UTF-8/en_US.UTF-8/C/en_US.UTF-8/en_US.UTF-8
+
+attached base packages:
+[1] stats     graphics  grDevices utils     datasets  methods   base     
+
+other attached packages:
+[1] REBayes_0.61  Matrix_1.2-3  ashr_1.0.8    qvalue_2.0.0  edgeR_3.10.5 
+[6] limma_3.24.15 knitr_1.12.3 
+
+loaded via a namespace (and not attached):
+ [1] Rcpp_0.12.3       magrittr_1.5      MASS_7.3-45      
+ [4] splines_3.2.3     pscl_1.4.9        munsell_0.4.2    
+ [7] doParallel_1.0.10 lattice_0.20-33   SQUAREM_2014.8-1 
+[10] colorspace_1.2-6  foreach_1.4.3     stringr_1.0.0    
+[13] plyr_1.8.3        tools_3.2.3       parallel_3.2.3   
+[16] grid_3.2.3        gtable_0.1.2      iterators_1.0.8  
+[19] htmltools_0.3     assertthat_0.1    yaml_2.1.13      
+[22] digest_0.6.9      reshape2_1.4.1    ggplot2_2.0.0    
+[25] formatR_1.2.1     codetools_0.2-14  evaluate_0.8     
+[28] rmarkdown_0.9.2   stringi_1.0-1     Rmosek_7.1.2     
+[31] scales_0.3.0      truncnorm_1.0-7  </code></pre>
+</div>
+
+
+<!-- some extra javascript for older browsers -->
+<script type="text/javascript" src="libs/polyfill.js"></script>
+
+<script>
+
+// manage active state of menu based on current page
+$(document).ready(function () {
+
+    // active menu
+    href = window.location.pathname
+    href = href.substr(href.lastIndexOf('/') + 1)
+    $('a[href="' + href + '"]').parent().addClass('active');
+
+    // manage active menu header
+    if (href.startsWith('authoring_'))
+      $('a[href="' + 'authoring' + '"]').parent().addClass('active');
+    else if (href.endsWith('_format.html'))
+      $('a[href="' + 'formats' + '"]').parent().addClass('active');
+    else if (href.startsWith('developer_'))
+      $('a[href="' + 'developer' + '"]').parent().addClass('active');
+
+});
+
+</script>
+
+</div>
+
+<script>
+
+// add bootstrap table styles to pandoc tables
+$(document).ready(function () {
+  $('tr.header').parent('thead').parent('table').addClass('table table-condensed');
+});
+
+</script>
+
+<!-- dynamically load mathjax for compatibility with self-contained -->
+<script>
+  (function () {
+    var script = document.createElement("script");
+    script.type = "text/javascript";
+    script.src  = "https://cdn.mathjax.org/mathjax/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML";
+    document.getElementsByTagName("head")[0].appendChild(script);
+  })();
+</script>
+
+</body>
+</html>

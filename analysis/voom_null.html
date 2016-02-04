@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+
+<head>
+
+<meta charset="utf-8">
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+<meta name="generator" content="pandoc" />
+
+<meta name="author" content="M Stephens" />
+
+<meta name="date" content="2016-02-03" />
+
+<title>Voom on null data - and effects of confounding/correlation</title>
+
+<script src="libs/jquery-1.11.0/jquery.min.js"></script>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link href="libs/bootstrap-3.3.1/css/united.min.css" rel="stylesheet" />
+<script src="libs/bootstrap-3.3.1/js/bootstrap.min.js"></script>
+<script src="libs/bootstrap-3.3.1/shim/html5shiv.min.js"></script>
+<script src="libs/bootstrap-3.3.1/shim/respond.min.js"></script>
+
+<style type="text/css">
+
+/* padding for bootstrap navbar */
+body {
+  padding-top: 50px;
+  padding-bottom: 40px;
+}
+
+
+/* offset scroll position for anchor links (for fixed navbar)  */
+.section h2 {
+  padding-top: 55px;
+  margin-top: -55px;
+}
+.section h3 {
+  padding-top: 55px;
+  margin-top: -55px;
+}
+
+
+
+/* don't use link color in navbar */
+.dropdown-menu>li>a {
+  color: black;
+}
+
+/* some padding for disqus */
+#disqus_thread {
+  margin-top: 45px;
+}
+
+</style>
+
+<link rel="stylesheet" href="libs/font-awesome-4.1.0/css/font-awesome.min.css"/>
+
+<style type="text/css">code{white-space: pre;}</style>
+<link rel="stylesheet"
+      href="libs/highlight/textmate.css"
+      type="text/css" />
+<script src="libs/highlight/highlight.js"></script>
+<style type="text/css">
+  pre:not([class]) {
+    background-color: white;
+  }
+</style>
+<script type="text/javascript">
+if (window.hljs && document.readyState && document.readyState === "complete") {
+   window.setTimeout(function() {
+      hljs.initHighlighting();
+   }, 0);
+}
+</script>
+
+
+
+</head>
+
+<body>
+
+<style type = "text/css">
+.main-container {
+  max-width: 940px;
+  margin-left: auto;
+  margin-right: auto;
+}
+code {
+  color: inherit;
+  background-color: rgba(0, 0, 0, 0.04);
+}
+img { 
+  max-width:100%; 
+  height: auto; 
+}
+</style>
+<div class="container-fluid main-container">
+
+
+<div class="navbar navbar-default navbar-fixed-top" role="navigation">
+  <div class="container">
+    <div class="navbar-header">
+      <button type="button" class="navbar-toggle collapsed" data-toggle="collapse" data-target="#navbar">
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+      </button>
+      <a class="navbar-brand" href="index.html">ashlar</a>
+    </div>
+    <div id="navbar" class="navbar-collapse collapse">
+      <ul class="nav navbar-nav">
+        <li><a href="index.html">Home</a></li>
+        <li><a href="about.html">About</a></li>
+        <li><a href="license.html">License</a></li>
+        <li><a href="https://github.com/jhsiao999/ashlar">GitHub</a></li>
+    </div><!--/.nav-collapse -->
+  </div><!--/.container -->
+</div><!--/.navbar -->
+
+<div id="header">
+<h1 class="title">Voom on null data - and effects of confounding/correlation</h1>
+<h4 class="author"><em>M Stephens</em></h4>
+<h4 class="date"><em>2016-02-03</em></h4>
+</div>
+
+<div id="TOC">
+<ul>
+<li><a href="#session-information">Session information</a></li>
+</ul>
+</div>
+
+<p><strong>Last updated:</strong> 2016-02-04</p>
+<p><strong>Code version:</strong> cc743de0ed77120abe5ff470019987f7f7ba20fe</p>
+<p>Load in the gtex liver data</p>
+<pre class="r"><code>library(limma)
+library(edgeR)
+library(qvalue)</code></pre>
+<pre><code>Warning: replacing previous import by &#39;grid::arrow&#39; when loading &#39;qvalue&#39;</code></pre>
+<pre><code>Warning: replacing previous import by &#39;grid::unit&#39; when loading &#39;qvalue&#39;</code></pre>
+<pre class="r"><code>library(ashr)
+r = read.table(&quot;../data/Liver.txt&quot;)
+r = r[,-(1:2)] # remove outliers
+#extract top g genes from G by n matrix X of expression
+top_genes_index=function(g,X){return(order(rowSums(X),decreasing =TRUE)[1:g])}
+lcpm = function(r){R = colSums(r); t(log2(((t(r)+0.5)/(R+1))* 10^6))}
+Y=lcpm(r)
+subset = top_genes_index(10000,Y)
+Y = Y[subset,]
+r = r[subset,]</code></pre>
+<p>Define voom transform (using code from Mengyin Lu)</p>
+<pre class="r"><code>voom_transform = function(counts, condition, W=NULL){
+  dgecounts = calcNormFactors(DGEList(counts=counts,group=condition))
+  #dgecounts = DGEList(counts=counts,group=condition)
+  if (is.null(W)){
+    design = model.matrix(~condition)
+  }else{
+    design = model.matrix(~condition+W)
+  }
+  
+  v = voom(dgecounts,design,plot=FALSE)
+  lim = lmFit(v)
+  betahat.voom = lim$coefficients[,2]
+  sebetahat.voom = lim$stdev.unscaled[,2]*lim$sigma
+  df.voom = length(condition)-2-!is.null(W)
+  
+  return(list(v=v,lim=lim,betahat=betahat.voom, sebetahat=sebetahat.voom, df=df.voom, v=v))
+}</code></pre>
+<p>Make 2 groups of size n, by random sampling.</p>
+<pre class="r"><code>set.seed(101) 
+n = 5 # number in each group
+counts = r[,sample(1:ncol(r),2*n)]
+condition = c(rep(0,n),rep(1,n))
+r.voom = voom_transform(counts,condition)
+r.ebayes = eBayes(r.voom$lim)
+hist(r.ebayes$p.value[,2],main=&quot;histogram of effect tests&quot;)</code></pre>
+<p><img src="figure/voom_null.Rmd/unnamed-chunk-3-1.png" title="" alt="" width="672" style="display: block; margin: auto;" /></p>
+<p>?eBayes says: “the estimates s2.prior and df.prior are computed by fitFDist. s2.post is the weighted average of s2.prior and sigma^2 with weights proportional to df.prior and df.residual respectively.”&quot;</p>
+<p>Let us look at these:</p>
+<pre class="r"><code>r.ebayes$df.prior</code></pre>
+<pre><code>[1] 3.596342</code></pre>
+<pre class="r"><code>r.ebayes$s2.prior</code></pre>
+<pre><code>[1] 0.8582596</code></pre>
+<pre class="r"><code>head(r.ebayes$df.residual)</code></pre>
+<pre><code>[1] 8 8 8 8 8 8</code></pre>
+<pre class="r"><code>plot(r.ebayes$sigma,r.voom$lim$sigma)</code></pre>
+<p><img src="figure/voom_null.Rmd/unnamed-chunk-4-1.png" title="" alt="" width="672" style="display: block; margin: auto;" /></p>
+<pre class="r"><code>plot(log(r.ebayes$sigma), log(sqrt(r.ebayes$s2.post)),col=(1+(r.ebayes$p.value[,2]&lt;0.01)))
+abline(a=0,b=1,col=2)</code></pre>
+<p><img src="figure/voom_null.Rmd/unnamed-chunk-4-2.png" title="" alt="" width="672" style="display: block; margin: auto;" /></p>
+<p>p value seems particularly to be problematic for high expressed genes?</p>
+<pre class="r"><code>mean(r.ebayes$p.value[1:100,2]&lt;0.1)</code></pre>
+<pre><code>[1] 0.46</code></pre>
+<pre class="r"><code>mean(r.ebayes$p.value[1:50,2]&lt;0.1)</code></pre>
+<pre><code>[1] 0.56</code></pre>
+<pre class="r"><code>mean(r.ebayes$p.value[1:10,2]&lt;0.1)</code></pre>
+<pre><code>[1] 0.8</code></pre>
+<pre class="r"><code>head(r.ebayes$p.value[,2])</code></pre>
+<pre><code>       13290        56303        43134        56317        56306 
+0.6892441407 0.1493676934 0.0038057334 0.0406911853 0.0746572002 
+       38672 
+0.0005252427 </code></pre>
+<p>Note that the third and 6th gene both have small p values. These measurements turn out to be correlated… indeed many genes are very correlated</p>
+<pre class="r"><code>Ysub=lcpm(counts)
+plot(Y[3,],Y[6,],col=&quot;gray&quot;, main=&quot;selected observations (black and red) \n in context of all (grey)&quot;)
+points(Ysub[3,],Ysub[6,],col=condition+1)</code></pre>
+<p><img src="figure/voom_null.Rmd/unnamed-chunk-6-1.png" title="" alt="" width="672" style="display: block; margin: auto;" /></p>
+<pre class="r"><code>hist(cor(t(Ysub[1:100,])),main=&quot;correlation of top 100 expressed genes&quot;)</code></pre>
+<p><img src="figure/voom_null.Rmd/unnamed-chunk-6-2.png" title="" alt="" width="672" style="display: block; margin: auto;" /></p>
+<pre class="r"><code>hist(cor(t(Ysub[8000:8100,])),main=&quot;correlation of 100 lower expressed genes&quot;)</code></pre>
+<p><img src="figure/voom_null.Rmd/unnamed-chunk-6-3.png" title="" alt="" width="672" style="display: block; margin: auto;" /></p>
+<pre class="r"><code>#plot an estimate of correlation of Ysub[6,] with other genes
+#plot(((1/10)*t(scale(Ysub)) %*% scale(Ysub)[6,,drop=FALSE])[1:10000],main=&quot;correlation of Y[6,] with other genes&quot;,pch=&quot;.&quot;)
+Ynorm = (Ysub-apply(Ysub,1,mean))
+Ynorm = Ynorm/apply(Ynorm,1,sd)
+hist(((1/10)* Ynorm[6,,drop=FALSE] %*% t(Ynorm)),main=&quot;correlation of Y[6,] with other genes&quot;,xlab=&quot;correlation&quot;)</code></pre>
+<p><img src="figure/voom_null.Rmd/unnamed-chunk-6-4.png" title="" alt="" width="672" style="display: block; margin: auto;" /></p>
+<pre class="r"><code>plot(Ysub[3,],r.voom$v$E[3,],main=&quot;check my lcpm matches voom&quot;)
+abline(a=0,b=1)</code></pre>
+<p><img src="figure/voom_null.Rmd/unnamed-chunk-6-5.png" title="" alt="" width="672" style="display: block; margin: auto;" /></p>
+<p>So these aren’t independent events. And there could be an element of confounding factors going on here. But still it seems rather coincidental that such small p values occur immediately in the strongest expressed genes… suggests maybe there is something we could do better at the individual test level.</p>
+<p>Note that at the 6th gene the top 5 values are in one group. This has non-parametric p value .5^9 = .002 which is small, but much bigger than the parametric p value <code>5.2524272\times 10^{-4}</code>. Still, worth bearing in mind that we may have gotten “unlucky” with this second seed.</p>
+<p>One thought is that maybe the standard deviation is being underestimated in this case. In fact, it is of course - because we know the truth is “null” so the within group variation here is much smaller than the truth. Are we doing enough to remediate this?</p>
+<pre class="r"><code>hist(apply(Y,1,sd),nclass=100)
+abline(v=sd(Y[6,]),col=2)
+abline(v=sd(Ysub[6,]),col=3)</code></pre>
+<p><img src="figure/voom_null.Rmd/unnamed-chunk-7-1.png" title="" alt="" width="672" style="display: block; margin: auto;" /></p>
+<pre class="r"><code>plot(apply(Y,1,sd)[1:100])
+points(apply(Ysub,1,sd)[1:100],col=2)</code></pre>
+<p><img src="figure/voom_null.Rmd/unnamed-chunk-7-2.png" title="" alt="" width="672" style="display: block; margin: auto;" /></p>
+<pre class="r"><code>plot(apply(Y,1,sd)[1:100],apply(Ysub,1,sd)[1:100],main=&quot;sd of Y, all data vs selected subset of 10&quot;)
+abline(a=0,b=1)</code></pre>
+<p><img src="figure/voom_null.Rmd/unnamed-chunk-7-3.png" title="" alt="" width="672" style="display: block; margin: auto;" /></p>
+<pre class="r"><code>plot(apply(Y,1,sd)[1:100],0.5*(apply(Ysub[,1:5],1,sd)[1:100]+apply(Ysub[,6:10],1,sd)[1:100]),
+     main=&quot;sd of Y, all data, vs selected subset \n estimated under alternative&quot;,ylab=&quot;average sd from two groups&quot;)
+abline(a=0,b=1,col=2)</code></pre>
+<p><img src="figure/voom_null.Rmd/unnamed-chunk-7-4.png" title="" alt="" width="672" style="display: block; margin: auto;" /></p>
+<pre class="r"><code>plot(apply(Y,1,sd),0.5*(apply(Ysub[,1:5],1,sd)+apply(Ysub[,6:10],1,sd)),
+     main=&quot;sd of Y, all data, vs selected subset \n estimated under alternative&quot;,ylab=&quot;average sd from two groups&quot;,pch=&quot;.&quot;)
+abline(a=0,b=1,col=2)</code></pre>
+<p><img src="figure/voom_null.Rmd/unnamed-chunk-7-5.png" title="" alt="" width="672" style="display: block; margin: auto;" /></p>
+<p>So here is what i think is happening: the randomization in this case happened to correlate highly with first PC. Consequence is that not only are there lots of “signals” in mean between two groups, but also the variance estimates are consistently too small - so the Empirical Bayes method which combines info across all the genes fails to save us.</p>
+<pre class="r"><code>temp=svd(t(Ynorm))
+plot(temp$d)</code></pre>
+<p><img src="figure/voom_null.Rmd/unnamed-chunk-8-1.png" title="" alt="" width="672" style="display: block; margin: auto;" /></p>
+<pre class="r"><code>plot(temp$u[,1],main=&quot;first PC is correlated with group \n (1-5 vs 6-10)&quot;)</code></pre>
+<p><img src="figure/voom_null.Rmd/unnamed-chunk-8-2.png" title="" alt="" width="672" style="display: block; margin: auto;" /></p>
+<div id="session-information" class="section level2">
+<h2>Session information</h2>
+<pre class="r"><code>sessionInfo()</code></pre>
+<pre><code>R version 3.2.3 (2015-12-10)
+Platform: x86_64-apple-darwin13.4.0 (64-bit)
+Running under: OS X 10.11.2 (El Capitan)
+
+locale:
+[1] en_US.UTF-8/en_US.UTF-8/en_US.UTF-8/C/en_US.UTF-8/en_US.UTF-8
+
+attached base packages:
+[1] stats     graphics  grDevices utils     datasets  methods   base     
+
+other attached packages:
+[1] ashr_1.0.8    qvalue_2.0.0  edgeR_3.10.5  limma_3.24.15 knitr_1.12.3 
+
+loaded via a namespace (and not attached):
+ [1] Rcpp_0.12.3       magrittr_1.5      MASS_7.3-45      
+ [4] splines_3.2.3     pscl_1.4.9        munsell_0.4.2    
+ [7] doParallel_1.0.10 lattice_0.20-33   SQUAREM_2014.8-1 
+[10] colorspace_1.2-6  foreach_1.4.3     stringr_1.0.0    
+[13] plyr_1.8.3        tools_3.2.3       parallel_3.2.3   
+[16] grid_3.2.3        gtable_0.1.2      iterators_1.0.8  
+[19] htmltools_0.3     yaml_2.1.13       digest_0.6.9     
+[22] reshape2_1.4.1    ggplot2_2.0.0     formatR_1.2.1    
+[25] codetools_0.2-14  evaluate_0.8      rmarkdown_0.9.2  
+[28] stringi_1.0-1     scales_0.3.0      truncnorm_1.0-7  </code></pre>
+</div>
+
+
+<!-- some extra javascript for older browsers -->
+<script type="text/javascript" src="libs/polyfill.js"></script>
+
+<script>
+
+// manage active state of menu based on current page
+$(document).ready(function () {
+
+    // active menu
+    href = window.location.pathname
+    href = href.substr(href.lastIndexOf('/') + 1)
+    $('a[href="' + href + '"]').parent().addClass('active');
+
+    // manage active menu header
+    if (href.startsWith('authoring_'))
+      $('a[href="' + 'authoring' + '"]').parent().addClass('active');
+    else if (href.endsWith('_format.html'))
+      $('a[href="' + 'formats' + '"]').parent().addClass('active');
+    else if (href.startsWith('developer_'))
+      $('a[href="' + 'developer' + '"]').parent().addClass('active');
+
+});
+
+</script>
+
+</div>
+
+<script>
+
+// add bootstrap table styles to pandoc tables
+$(document).ready(function () {
+  $('tr.header').parent('thead').parent('table').addClass('table table-condensed');
+});
+
+</script>
+
+<!-- dynamically load mathjax for compatibility with self-contained -->
+<script>
+  (function () {
+    var script = document.createElement("script");
+    script.type = "text/javascript";
+    script.src  = "https://cdn.mathjax.org/mathjax/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML";
+    document.getElementsByTagName("head")[0].appendChild(script);
+  })();
+</script>
+
+</body>
+</html>
