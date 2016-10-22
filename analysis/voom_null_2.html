@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+
+<head>
+
+<meta charset="utf-8">
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+<meta name="generator" content="pandoc" />
+
+
+<meta name="author" content="M Stephens" />
+
+<meta name="date" content="2016-10-21" />
+
+<title>Voom on null data - multiple examples</title>
+
+<script src="libs/jquery-1.11.3/jquery.min.js"></script>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link href="libs/bootstrap-3.3.5/css/united.min.css" rel="stylesheet" />
+<script src="libs/bootstrap-3.3.5/js/bootstrap.min.js"></script>
+<script src="libs/bootstrap-3.3.5/shim/html5shiv.min.js"></script>
+<script src="libs/bootstrap-3.3.5/shim/respond.min.js"></script>
+
+<style type="text/css">
+
+/* padding for bootstrap navbar */
+body {
+  padding-top: 50px;
+  padding-bottom: 40px;
+}
+
+
+/* offset scroll position for anchor links (for fixed navbar)  */
+.section h2 {
+  padding-top: 55px;
+  margin-top: -55px;
+}
+.section h3 {
+  padding-top: 55px;
+  margin-top: -55px;
+}
+
+
+
+/* don't use link color in navbar */
+.dropdown-menu>li>a {
+  color: black;
+}
+
+/* some padding for disqus */
+#disqus_thread {
+  margin-top: 45px;
+}
+
+</style>
+
+<link rel="stylesheet" href="libs/font-awesome-4.1.0/css/font-awesome.min.css"/>
+
+<style type="text/css">code{white-space: pre;}</style>
+<link rel="stylesheet"
+      href="libs/highlight/textmate.css"
+      type="text/css" />
+<script src="libs/highlight/highlight.js"></script>
+<style type="text/css">
+  pre:not([class]) {
+    background-color: white;
+  }
+</style>
+<script type="text/javascript">
+if (window.hljs && document.readyState && document.readyState === "complete") {
+   window.setTimeout(function() {
+      hljs.initHighlighting();
+   }, 0);
+}
+</script>
+
+
+
+<style type="text/css">
+h1 {
+  font-size: 34px;
+}
+h1.title {
+  font-size: 38px;
+}
+h2 {
+  font-size: 30px;
+}
+h3 {
+  font-size: 24px;
+}
+h4 {
+  font-size: 18px;
+}
+h5 {
+  font-size: 16px;
+}
+h6 {
+  font-size: 12px;
+}
+.table th:not([align]) {
+  text-align: left;
+}
+</style>
+
+
+</head>
+
+<body>
+
+<style type = "text/css">
+.main-container {
+  max-width: 940px;
+  margin-left: auto;
+  margin-right: auto;
+}
+code {
+  color: inherit;
+  background-color: rgba(0, 0, 0, 0.04);
+}
+img {
+  max-width:100%;
+  height: auto;
+}
+.tabbed-pane {
+  padding-top: 12px;
+}
+button.code-folding-btn:focus {
+  outline: none;
+}
+</style>
+
+
+<div class="container-fluid main-container">
+
+<!-- tabsets -->
+<script src="libs/navigation-1.1/tabsets.js"></script>
+<script>
+$(document).ready(function () {
+  window.buildTabsets("TOC");
+});
+</script>
+
+<!-- code folding -->
+
+
+
+
+
+
+<div class="navbar navbar-default navbar-fixed-top" role="navigation">
+  <div class="container">
+    <div class="navbar-header">
+      <button type="button" class="navbar-toggle collapsed" data-toggle="collapse" data-target="#navbar">
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+      </button>
+      <a class="navbar-brand" href="index.html">ashlar</a>
+    </div>
+    <div id="navbar" class="navbar-collapse collapse">
+      <ul class="nav navbar-nav">
+        <li><a href="index.html">Home</a></li>
+        <li><a href="about.html">About</a></li>
+        <li><a href="license.html">License</a></li>
+        <li><a href="https://github.com/jhsiao999/ashlar">GitHub</a></li>
+    </div><!--/.nav-collapse -->
+  </div><!--/.container -->
+</div><!--/.navbar -->
+
+<div class="fluid-row" id="header">
+
+
+
+<h1 class="title toc-ignore">Voom on null data - multiple examples</h1>
+<h4 class="author"><em>M Stephens</em></h4>
+<h4 class="date"><em>2016-10-21</em></h4>
+
+</div>
+
+<div id="TOC">
+<ul>
+<li><a href="#introduction">Introduction</a><ul>
+<li><a href="#session-information">Session information</a></li>
+</ul></li>
+</ul>
+</div>
+
+<p><strong>Last updated:</strong> 2016-10-22</p>
+<p><strong>Code version:</strong> bfb3bb94b8ea25529b492181161b6ef6849ee346</p>
+<div id="introduction" class="section level1">
+<h1>Introduction</h1>
+<p>This document simply simulates some null data by randomly sampling two groups of 5 samples from some RNA-seq data (GTEx liver samples). We plot <span class="math inline">\(p\)</span> value histograms and see the effects of inflation: some distributions are inflated near 0 and others are inflated near 1. However, when we look at the qqplots (here of the z scores, but should be same for p values) we see something that is interesting, although obvious in hindsight: the most extreme p values (z scores) are never “too extreme” (although they are sometimes not extreme enough). The inflation comes from the “not quite so extreme” p values and z scores. This makes sense: when you have positively correlated variables, the most extreme values will tend to be less extreme than when you have independent samples, because you have “effectively” fewer independent samples.</p>
+<p>It seems likely this can be exploited to help avoid false positives under positive correlation.</p>
+<p>Load in the gtex liver data</p>
+<pre class="r"><code>library(limma)
+library(edgeR)
+library(qvalue)
+library(ashr)
+r = read.table(&quot;../data/Liver.txt&quot;)
+r = r[,-(1:2)] # remove outliers
+#extract top g genes from G by n matrix X of expression
+top_genes_index=function(g,X){return(order(rowSums(X),decreasing =TRUE)[1:g])}
+lcpm = function(r){R = colSums(r); t(log2(((t(r)+0.5)/(R+1))* 10^6))}
+Y=lcpm(r)
+subset = top_genes_index(10000,Y)
+Y = Y[subset,]
+r = r[subset,]</code></pre>
+<p>Define voom transform (using code from Mengyin Lu)</p>
+<pre class="r"><code>voom_transform = function(counts, condition, W=NULL){
+  dgecounts = calcNormFactors(DGEList(counts=counts,group=condition))
+  #dgecounts = DGEList(counts=counts,group=condition)
+  if (is.null(W)){
+    design = model.matrix(~condition)
+  }else{
+    design = model.matrix(~condition+W)
+  }
+  
+  v = voom(dgecounts,design,plot=FALSE)
+  lim = lmFit(v)
+  betahat.voom = lim$coefficients[,2]
+  sebetahat.voom = lim$stdev.unscaled[,2]*lim$sigma
+  df.voom = length(condition)-2-!is.null(W)
+  
+  return(list(v=v,lim=lim,betahat=betahat.voom, sebetahat=sebetahat.voom, df=df.voom, v=v))
+}</code></pre>
+<p>Make 2 groups of size n, and repeat random sampling.</p>
+<pre class="r"><code>set.seed(101) 
+n = 5 # number in each group
+p = list()
+z = list()
+tscore =list()
+
+for(i in 1:10){
+  counts = r[,sample(1:ncol(r),2*n)]
+  condition = c(rep(0,n),rep(1,n))
+  r.voom = voom_transform(counts,condition)
+  r.ebayes = eBayes(r.voom$lim)
+  p[[i]] = r.ebayes$p.value[,2]
+  tscore[[i]] = r.ebayes$t[,2]
+  z[[i]] = sign(r.ebayes$t[,2]) * qnorm(p[[i]]/2)
+  hist(p[[i]],main=&quot;histogram of effect tests&quot;)
+  qqnorm(z[[i]])
+  abline(a=0,b=1,col=1)
+}</code></pre>
+<p><img src="figure/voom_null_2.Rmd/unnamed-chunk-3-1.png" width="672" style="display: block; margin: auto;" /><img src="figure/voom_null_2.Rmd/unnamed-chunk-3-2.png" width="672" style="display: block; margin: auto;" /><img src="figure/voom_null_2.Rmd/unnamed-chunk-3-3.png" width="672" style="display: block; margin: auto;" /><img src="figure/voom_null_2.Rmd/unnamed-chunk-3-4.png" width="672" style="display: block; margin: auto;" /><img src="figure/voom_null_2.Rmd/unnamed-chunk-3-5.png" width="672" style="display: block; margin: auto;" /><img src="figure/voom_null_2.Rmd/unnamed-chunk-3-6.png" width="672" style="display: block; margin: auto;" /><img src="figure/voom_null_2.Rmd/unnamed-chunk-3-7.png" width="672" style="display: block; margin: auto;" /><img src="figure/voom_null_2.Rmd/unnamed-chunk-3-8.png" width="672" style="display: block; margin: auto;" /><img src="figure/voom_null_2.Rmd/unnamed-chunk-3-9.png" width="672" style="display: block; margin: auto;" /><img src="figure/voom_null_2.Rmd/unnamed-chunk-3-10.png" width="672" style="display: block; margin: auto;" /><img src="figure/voom_null_2.Rmd/unnamed-chunk-3-11.png" width="672" style="display: block; margin: auto;" /><img src="figure/voom_null_2.Rmd/unnamed-chunk-3-12.png" width="672" style="display: block; margin: auto;" /><img src="figure/voom_null_2.Rmd/unnamed-chunk-3-13.png" width="672" style="display: block; margin: auto;" /><img src="figure/voom_null_2.Rmd/unnamed-chunk-3-14.png" width="672" style="display: block; margin: auto;" /><img src="figure/voom_null_2.Rmd/unnamed-chunk-3-15.png" width="672" style="display: block; margin: auto;" /><img src="figure/voom_null_2.Rmd/unnamed-chunk-3-16.png" width="672" style="display: block; margin: auto;" /><img src="figure/voom_null_2.Rmd/unnamed-chunk-3-17.png" width="672" style="display: block; margin: auto;" /><img src="figure/voom_null_2.Rmd/unnamed-chunk-3-18.png" width="672" style="display: block; margin: auto;" /><img src="figure/voom_null_2.Rmd/unnamed-chunk-3-19.png" width="672" style="display: block; margin: auto;" /><img src="figure/voom_null_2.Rmd/unnamed-chunk-3-20.png" width="672" style="display: block; margin: auto;" /></p>
+<div id="session-information" class="section level2">
+<h2>Session information</h2>
+<pre class="r"><code>sessionInfo()</code></pre>
+<pre><code>R version 3.3.1 (2016-06-21)
+Platform: x86_64-apple-darwin13.4.0 (64-bit)
+Running under: OS X 10.11.5 (El Capitan)
+
+locale:
+[1] en_US.UTF-8/en_US.UTF-8/en_US.UTF-8/C/en_US.UTF-8/en_US.UTF-8
+
+attached base packages:
+[1] stats     graphics  grDevices utils     datasets  methods   base     
+
+other attached packages:
+[1] ashr_2.0.3    qvalue_2.0.0  edgeR_3.10.5  limma_3.24.15 knitr_1.13   
+
+loaded via a namespace (and not attached):
+ [1] Rcpp_0.12.7        magrittr_1.5       MASS_7.3-45       
+ [4] splines_3.3.1      pscl_1.4.9         munsell_0.4.3     
+ [7] doParallel_1.0.10  lattice_0.20-33    SQUAREM_2016.8-2  
+[10] colorspace_1.2-6   foreach_1.4.3      stringr_1.0.0     
+[13] plyr_1.8.4         tools_3.3.1        parallel_3.3.1    
+[16] grid_3.3.1         gtable_0.2.0       iterators_1.0.8   
+[19] htmltools_0.3.5    yaml_2.1.13        digest_0.6.10     
+[22] reshape2_1.4.1     ggplot2_2.1.0      formatR_1.4       
+[25] codetools_0.2-14   evaluate_0.9       rmarkdown_0.9.6.14
+[28] stringi_1.1.1      scales_0.4.0       truncnorm_1.0-7   </code></pre>
+</div>
+</div>
+
+
+<!-- some extra javascript for older browsers -->
+<script type="text/javascript" src="libs/polyfill.js"></script>
+
+<script>
+
+// manage active state of menu based on current page
+$(document).ready(function () {
+
+    // active menu
+    href = window.location.pathname
+    href = href.substr(href.lastIndexOf('/') + 1)
+    $('a[href="' + href + '"]').parent().addClass('active');
+
+    // manage active menu header
+    if (href.startsWith('authoring_'))
+      $('a[href="' + 'authoring' + '"]').parent().addClass('active');
+    else if (href.endsWith('_format.html'))
+      $('a[href="' + 'formats' + '"]').parent().addClass('active');
+    else if (href.startsWith('developer_'))
+      $('a[href="' + 'developer' + '"]').parent().addClass('active');
+
+});
+
+</script>
+
+
+
+</div>
+
+<script>
+
+// add bootstrap table styles to pandoc tables
+$(document).ready(function () {
+  $('tr.header').parent('thead').parent('table').addClass('table table-condensed');
+});
+
+</script>
+
+<!-- dynamically load mathjax for compatibility with self-contained -->
+<script>
+  (function () {
+    var script = document.createElement("script");
+    script.type = "text/javascript";
+    script.src  = "https://cdn.mathjax.org/mathjax/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML";
+    document.getElementsByTagName("head")[0].appendChild(script);
+  })();
+</script>
+
+</body>
+</html>

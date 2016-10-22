@@ -142,6 +142,16 @@ plot(temp$u[,1],main="first PC is correlated with group \n (1-5 vs 6-10)")
 ```
 
 
+What if we use standard deviations from all observations under null instead of the alternative?
+```{r}
+sd.sub = apply(Ysub,1,sd)
+mean1 = apply(Ysub[,1:5],1,mean)
+mean2 = apply(Ysub[,6:10],1,mean)
+z = (mean1-mean2)/(sd.sub/sqrt(10))
+qqnorm(z)
+abline(a=0,b=1)
+```
+
 ## Session information
 
 ```{r info}

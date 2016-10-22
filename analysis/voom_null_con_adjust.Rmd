@@ -1,0 +1,143 @@
+---
+title: "Confounder ajustment methods on null data."
+author: "D Gerard"
+date: 2016-02-04
+---
+
+**Last updated:** `r Sys.Date()`
+
+**Code version:** `r system("git log -1 --format='%H'", intern = TRUE)`
+
+## Abstract
+In this write-up, I explore CATE's effects on the p-values, seeing if they exert the same behavior that Stephens noticed from `eBayes`. Cate does not correct that the genes that are highly expressed tend to have smaller p-values. CATE does make the distribution of the p-values look more uniform. I determine that this is entirely because they inflate the variance of the test-statistics. This fits in with what Stephens thinks is going on.
+
+## Analysis
+```{r chunk-options, include=FALSE}
+source("chunk-options.R")
+```
+
+Load in the gtex liver data and estimation procedures
+```{r, results='hide', message = FALSE, warning = FALSE}
+library(edgeR)
+library(qvalue)
+library(ashr)
+source("../code/datamaker_gerard.R") ## contains suite of estimation functions.
+r = read.table("../data/Liver.txt")
+r = r[ , -(1:2)] # remove outliers
+#extract top g genes from G by n matrix X of expression
+top_genes_index=function(g, X) { return(order(rowSums(X), decreasing = TRUE)[1:g])}
+lcpm = function(r) { R = colSums(r); t(log2(((t(r) + 0.5) / (R + 1)) * 10 ^ 6))}
+Y = lcpm(r)
+subset = top_genes_index(10000, Y)
+Y = Y[subset, ] ## Y are log-counts per million
+r = r[subset, ] ## r are raw counts
+```
+
+
+Make 2 groups of size n, by random sampling. Re-calculate the p-values from limma.
+```{r}
+set.seed(101) 
+n = 5 # number in each group
+counts = r[ , sample(1:ncol(r), 2 * n)]
+Ysub = lcpm(counts)
+condition = c(rep(0, n), rep(1, n))
+r.voom = voom_transform(counts, condition)
+r.ebayes = eBayes(r.voom$lim)
+hist(r.ebayes$p.value[ , 2], main = "histogram of effect tests")
+```
+
+p value seems particularly to be problematic for high expressed genes. The null hypothesis is that the most expressed genes have p-values further from mean p-value than less expressed genes. We can test this by running a bootstrap.
+```{r}
+sample_boot_mean <- function(x, nsamp, nruns = 100) {
+  null_dist_vec <- rep(NA, length = nruns)
+  for(index in 1:nruns) {
+    null_dist_vec[index] <- mean(sample(x, size = nsamp))
+  }
+  return(null_dist_vec)
+}
+
+plot_null_dist_p <- function(p_value_vec, nsamp, nruns = 10000) {
+  null_dist_vec <- sample_boot_mean(p_value_vec, nsamp = nsamp, nruns = nruns)
+  stat_val <- mean(p_value_vec[1:nsamp])
+  xlim <- c(min(c(stat_val, null_dist_vec)), max(c(stat_val, null_dist_vec)))
+  hist(null_dist_vec, main = paste0("Null dist when sample size is ", nsamp), xlim = xlim, xlab = paste0("Mean of ", nsamp, " p-values"))
+  abline(v = stat_val, col = 2, lty = 2, lwd = 2)
+  legend("topleft", "Observed Stat", lty = 2, col = 2, lwd = 2)
+}
+
+plot_null_dist_p(r.ebayes$p.value[, 2], nsamp = 100)
+plot_null_dist_p(r.ebayes$p.value[, 2], nsamp = 50)
+plot_null_dist_p(r.ebayes$p.value[, 2], nsamp = 10)
+```
+
+Now look at how robust regression version of CATE does on the log-cpm dataset. First, we estimate the number of hidden confounders using `num.sv()` from the `sva` package.
+```{r}
+mod_mat <- model.matrix(~condition)
+num_sv <- sva::num.sv(dat = Ysub, mod = mod_mat)
+num_sv
+```
+
+Now we fit cate and LEAPP. The soft-thresholding version of LEAPP is taking too long, so we'll just look at the ridge version. CATE seems to be much better at adjusting the p-values than LEAPP, but it still has a peak near 0.
+```{r}
+cate_out <- cate_fit_rr(Y = Ysub, condition = condition, num_sv = num_sv)
+##leapp_out_soft <- leapp_fit_soft(Y = Ysub, condition = condition, num_sv = num_sv)
+leapp_out_ridge <- leapp_fit_ridge(Y = Ysub, condition = condition, num_sv = num_sv)
+
+hist(cate_out$pvalue, main = "Histogram of CATE P-values", xlab = "p-values")
+hist(leapp_out_ridge$pvalue, main = "Histogram of LEAPP P-values", xlab = "p-values")
+```
+
+What about the p-values for highly expressed genes from cate? Let's rerun the bootstraps. Nope, didn't correct for it.
+```{r}
+plot_null_dist_p(cate_out$pvalue, nsamp = 100)
+plot_null_dist_p(cate_out$pvalue, nsamp = 50)
+plot_null_dist_p(cate_out$pvalue, nsamp = 10)
+```
+
+I noticed that CATE adjusts their t-statistics. Their paper states that this is because their variance estimates are biased small. The p-values from the "calibrated" t-statistics look pretty good (p-values are alittle too large). The uncalibrated ones are just the p-values from simple linear regressions. When you use the `calibrate = FALSE` option when using the robust regression method, the p-values do not look like they improve at all.
+```{r}
+#ols_fits <- get_ols(Ysub, condition)
+#ols_out <- fit_freq_methods(ols_fits)
+#hist(ols_out$p_values, main = "P-values from simple linear regression \n(t as null dist)", xlab = "p-values")
+cate_out_naive <-  cate::cate(~trt, Y = t(Ysub),
+                          X.data = data.frame(trt = as.numeric(condition)),
+                          r = 0, adj.method = "naive", calibrate = FALSE)
+cate_out_rr_nocalibrate <-  cate::cate(~trt, Y = t(Ysub),
+                          X.data = data.frame(trt = as.numeric(condition)),
+                          r = num_sv, adj.method = "rr", calibrate = FALSE)
+cate_out_calibrate <- cate::cate(~trt, Y = t(Ysub),
+                          X.data = data.frame(trt = as.numeric(condition)),
+                          r = 0, adj.method = "naive", calibrate = TRUE)
+hist(cate_out_naive$beta.p.value, main = "P-values from simple linear regression \n(but normal as null dist)", xlab = "p-values")
+hist(cate_out_calibrate$beta.p.value, main = "P-values from Calibrated t-statistics\nNo confounder adjustment.", xlab = "p-values")
+hist(cate_out_rr_nocalibrate$beta.p.value, main = "P-values from Uncalibrated t-statistics\n with Hidden Confounders Estimated", xlab = "p-values")
+```
+
+The code for the calibration is:
+```{r}
+adjusted_t <- (cate_out_naive$beta.t - median(cate_out_naive$beta.t))/mad(cate_out_naive$beta.t - median(cate_out_naive$beta.t))
+adjusted_p <- 2 * (1 - pnorm(abs(adjusted_t)))
+```
+
+
+What if we give cate some null genes?
+```{r}
+which_null <- rep(FALSE, length = nrow(Ysub))
+which_null[1:round(length(which_null)/2)] <- TRUE
+cate_out_nc_nocalibrate <-  cate::cate(~trt, Y = t(Ysub),
+                          X.data = data.frame(trt = as.numeric(condition)),
+                          r = num_sv, adj.method = "nc", calibrate = FALSE, nc = which_null)
+cate_out_nc <-  cate::cate(~trt, Y = t(Ysub),
+                          X.data = data.frame(trt = as.numeric(condition)),
+                          r = num_sv, adj.method = "nc", calibrate = TRUE, nc = which_null)
+hist(cate_out_nc_nocalibrate$beta.p.value, main = "P-values from CATE with NC\nUncalibrated")
+hist(cate_out_nc$beta.p.value, main = "P-values from CATE with NC\nCalibrated")
+```
+
+The best method for these data appear to be just inflating the standard error estimates. In the all null case, cate without the calibration doesn't seem to help out.
+
+## Session information
+
+```{r info}
+sessionInfo()
+```
