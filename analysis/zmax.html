@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+
+<head>
+
+<meta charset="utf-8">
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+<meta name="generator" content="pandoc" />
+
+
+<meta name="author" content="Matthew Stephens" />
+
+<meta name="date" content="2016-10-23" />
+
+<title>Distribution of max of n z statistics</title>
+
+<script src="libs/jquery-1.11.3/jquery.min.js"></script>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link href="libs/bootstrap-3.3.5/css/united.min.css" rel="stylesheet" />
+<script src="libs/bootstrap-3.3.5/js/bootstrap.min.js"></script>
+<script src="libs/bootstrap-3.3.5/shim/html5shiv.min.js"></script>
+<script src="libs/bootstrap-3.3.5/shim/respond.min.js"></script>
+
+<style type="text/css">
+
+/* padding for bootstrap navbar */
+body {
+  padding-top: 50px;
+  padding-bottom: 40px;
+}
+
+
+/* offset scroll position for anchor links (for fixed navbar)  */
+.section h2 {
+  padding-top: 55px;
+  margin-top: -55px;
+}
+.section h3 {
+  padding-top: 55px;
+  margin-top: -55px;
+}
+
+
+
+/* don't use link color in navbar */
+.dropdown-menu>li>a {
+  color: black;
+}
+
+/* some padding for disqus */
+#disqus_thread {
+  margin-top: 45px;
+}
+
+</style>
+
+<link rel="stylesheet" href="libs/font-awesome-4.1.0/css/font-awesome.min.css"/>
+
+<style type="text/css">code{white-space: pre;}</style>
+<link rel="stylesheet"
+      href="libs/highlight/textmate.css"
+      type="text/css" />
+<script src="libs/highlight/highlight.js"></script>
+<style type="text/css">
+  pre:not([class]) {
+    background-color: white;
+  }
+</style>
+<script type="text/javascript">
+if (window.hljs && document.readyState && document.readyState === "complete") {
+   window.setTimeout(function() {
+      hljs.initHighlighting();
+   }, 0);
+}
+</script>
+
+
+
+<style type="text/css">
+h1 {
+  font-size: 34px;
+}
+h1.title {
+  font-size: 38px;
+}
+h2 {
+  font-size: 30px;
+}
+h3 {
+  font-size: 24px;
+}
+h4 {
+  font-size: 18px;
+}
+h5 {
+  font-size: 16px;
+}
+h6 {
+  font-size: 12px;
+}
+.table th:not([align]) {
+  text-align: left;
+}
+</style>
+
+
+</head>
+
+<body>
+
+<style type = "text/css">
+.main-container {
+  max-width: 940px;
+  margin-left: auto;
+  margin-right: auto;
+}
+code {
+  color: inherit;
+  background-color: rgba(0, 0, 0, 0.04);
+}
+img {
+  max-width:100%;
+  height: auto;
+}
+.tabbed-pane {
+  padding-top: 12px;
+}
+button.code-folding-btn:focus {
+  outline: none;
+}
+</style>
+
+
+
+<div class="container-fluid main-container">
+
+<!-- tabsets -->
+<script src="libs/navigation-1.1/tabsets.js"></script>
+<script>
+$(document).ready(function () {
+  window.buildTabsets("TOC");
+});
+</script>
+
+<!-- code folding -->
+
+
+
+
+
+
+<div class="navbar navbar-default navbar-fixed-top" role="navigation">
+  <div class="container">
+    <div class="navbar-header">
+      <button type="button" class="navbar-toggle collapsed" data-toggle="collapse" data-target="#navbar">
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+      </button>
+      <a class="navbar-brand" href="index.html">ashlar</a>
+    </div>
+    <div id="navbar" class="navbar-collapse collapse">
+      <ul class="nav navbar-nav">
+        <li><a href="index.html">Home</a></li>
+        <li><a href="about.html">About</a></li>
+        <li><a href="license.html">License</a></li>
+        <li><a href="https://github.com/jhsiao999/ashlar">GitHub</a></li>
+    </div><!--/.nav-collapse -->
+  </div><!--/.container -->
+</div><!--/.navbar -->
+
+<div class="fluid-row" id="header">
+
+
+
+<h1 class="title toc-ignore">Distribution of max of n z statistics</h1>
+<h4 class="author"><em>Matthew Stephens</em></h4>
+<h4 class="date"><em>2016-10-23</em></h4>
+
+</div>
+
+<div id="TOC">
+<ul>
+<li><a href="#introduction">Introduction</a></li>
+<li><a href="#next-question">Next question</a></li>
+<li><a href="#possible-next-step">Possible next step</a><ul>
+<li><a href="#session-information">Session information</a></li>
+</ul></li>
+</ul>
+</div>
+
+<p><strong>Last updated:</strong> 2016-12-02</p>
+<p><strong>Code version:</strong> 204c3424750c9419c4ae2f4c79567f8915e910d5</p>
+<div id="introduction" class="section level2">
+<h2>Introduction</h2>
+<p>Suppose you know that the maximum of <span class="math inline">\(n\)</span> <span class="math inline">\(z\)</span> scores is zmax. What does that tell you about the distribution of effects (betahat/s). [Here we are assuming s=1 for all betahat, so betahat and z are the same thing]</p>
+<p>Suppose the distribution of the effects is <span class="math inline">\(N(0,\sigma^2)\)</span>. So the distribution of the <span class="math inline">\(z\)</span> scores is <span class="math inline">\(N(0,1+\sigma^2)\)</span>. The max z score is</p>
+<pre class="r"><code>#This function computes the log probability density of zmax if the distribution of
+#effects is N(0,sigma^2)
+ldmaxz = function(z,sigma,n){
+  dnorm(z,mean=0,sd=sqrt(1+sigma^2),log=TRUE) + 
+    (n-1) * pnorm(z,0,sqrt(1+sigma^2),log=TRUE)
+}
+
+s = seq(0,1,length=100)
+logl = ldmaxz(4, s, 1000)
+plot(s,logl,main=&quot;loglik for s for maxz=4 in 1000 observations&quot;,type=&quot;l&quot;)</code></pre>
+<p><img src="figure/zmax.Rmd/unnamed-chunk-1-1.png" width="672" style="display: block; margin: auto;" /></p>
+<pre class="r"><code>logl = ldmaxz(4, s, 10000)
+plot(s,logl,main=&quot;loglik for s for maxz=4 in 10000 observations&quot;,type=&quot;l&quot;)</code></pre>
+<p><img src="figure/zmax.Rmd/unnamed-chunk-1-2.png" width="672" style="display: block; margin: auto;" /></p>
+<pre class="r"><code>s = seq(0,2,length=100)
+logl = ldmaxz(5, s, 1000)
+plot(s,logl,main=&quot;loglik for s for maxz=5 in 1000 observations&quot;,type=&quot;l&quot;)</code></pre>
+<p><img src="figure/zmax.Rmd/unnamed-chunk-1-3.png" width="672" style="display: block; margin: auto;" /></p>
+</div>
+<div id="next-question" class="section level1">
+<h1>Next question</h1>
+<p>The next question is what happens if we add a point mass at 0 for effects. So <span class="math inline">\(z \sim \pi_0 N(0,1) + (1-\pi_0) N(0,1+s^2)\)</span>.</p>
+<p>What does likelihood for <span class="math inline">\(\pi_0\)</span> and <span class="math inline">\(s\)</span> look like?</p>
+</div>
+<div id="possible-next-step" class="section level1">
+<h1>Possible next step</h1>
+<p>Suppose we have data 1,2,3,4,5,6,7,8,8,8,8,8,8,8,9,10 that is from a monotone density. I argue that in such cases the best explanation for all those 8s is dependence, and that a good estimate of the density would be uniform, rather than the Grenander estimate.</p>
+<p>The question is, how to achieve that. Intuitively we might like to reweight the 8s to downweight them. For example, we could assign weights to the observations so that the empirical cdf is equal to <span class="math inline">\(F\)</span>, the Grenander estimate. However, if we reweight by the Grenander estimate itself, the weights from the 8s effectively get put onto the 1…7 observations, which is essentially the behaviour we want to avoid…</p>
+<div id="session-information" class="section level2">
+<h2>Session information</h2>
+<pre class="r"><code>sessionInfo()</code></pre>
+<pre><code>R version 3.3.1 (2016-06-21)
+Platform: x86_64-apple-darwin13.4.0 (64-bit)
+Running under: OS X 10.11.5 (El Capitan)
+
+locale:
+[1] en_US.UTF-8/en_US.UTF-8/en_US.UTF-8/C/en_US.UTF-8/en_US.UTF-8
+
+attached base packages:
+[1] stats     graphics  grDevices utils     datasets  methods   base     
+
+other attached packages:
+[1] knitr_1.14
+
+loaded via a namespace (and not attached):
+ [1] magrittr_1.5    assertthat_0.1  formatR_1.4     tools_3.3.1    
+ [5] htmltools_0.3.5 yaml_2.1.13     tibble_1.2      Rcpp_0.12.8    
+ [9] stringi_1.1.2   rmarkdown_1.1   stringr_1.1.0   digest_0.6.10  
+[13] evaluate_0.10  </code></pre>
+</div>
+</div>
+
+
+<!-- some extra javascript for older browsers -->
+<script type="text/javascript" src="libs/polyfill.js"></script>
+
+<script>
+
+// manage active state of menu based on current page
+$(document).ready(function () {
+
+    // active menu
+    href = window.location.pathname
+    href = href.substr(href.lastIndexOf('/') + 1)
+    $('a[href="' + href + '"]').parent().addClass('active');
+
+    // manage active menu header
+    if (href.startsWith('authoring_'))
+      $('a[href="' + 'authoring' + '"]').parent().addClass('active');
+    else if (href.endsWith('_format.html'))
+      $('a[href="' + 'formats' + '"]').parent().addClass('active');
+    else if (href.startsWith('developer_'))
+      $('a[href="' + 'developer' + '"]').parent().addClass('active');
+
+});
+
+</script>
+
+
+
+</div>
+
+<script>
+
+// add bootstrap table styles to pandoc tables
+$(document).ready(function () {
+  $('tr.header').parent('thead').parent('table').addClass('table table-condensed');
+});
+
+
+</script>
+
+<!-- dynamically load mathjax for compatibility with self-contained -->
+<script>
+  (function () {
+    var script = document.createElement("script");
+    script.type = "text/javascript";
+    script.src  = "https://cdn.mathjax.org/mathjax/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML";
+    document.getElementsByTagName("head")[0].appendChild(script);
+  })();
+</script>
+
+</body>
+</html>
