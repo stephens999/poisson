@@ -132,6 +132,7 @@ button.code-folding-btn:focus {
 </style>
 
 
+
 <div class="container-fluid main-container">
 
 <!-- tabsets -->
@@ -187,8 +188,8 @@ $(document).ready(function () {
 </ul>
 </div>
 
-<p><strong>Last updated:</strong> 2016-10-22</p>
-<p><strong>Code version:</strong> bfb3bb94b8ea25529b492181161b6ef6849ee346</p>
+<p><strong>Last updated:</strong> 2016-10-24</p>
+<p><strong>Code version:</strong> 204c3424750c9419c4ae2f4c79567f8915e910d5</p>
 <div id="introduction" class="section level1">
 <h1>Introduction</h1>
 <p>This document simply simulates some null data by randomly sampling two groups of 5 samples from some RNA-seq data (GTEx liver samples). We plot <span class="math inline">\(p\)</span> value histograms and see the effects of inflation: some distributions are inflated near 0 and others are inflated near 1. However, when we look at the qqplots (here of the z scores, but should be same for p values) we see something that is interesting, although obvious in hindsight: the most extreme p values (z scores) are never “too extreme” (although they are sometimes not extreme enough). The inflation comes from the “not quite so extreme” p values and z scores. This makes sense: when you have positively correlated variables, the most extreme values will tend to be less extreme than when you have independent samples, because you have “effectively” fewer independent samples.</p>
@@ -259,19 +260,20 @@ attached base packages:
 [1] stats     graphics  grDevices utils     datasets  methods   base     
 
 other attached packages:
-[1] ashr_2.0.3    qvalue_2.0.0  edgeR_3.10.5  limma_3.24.15 knitr_1.13   
+[1] ashr_2.0.3    qvalue_2.0.0  edgeR_3.10.5  limma_3.24.15 knitr_1.14   
 
 loaded via a namespace (and not attached):
- [1] Rcpp_0.12.7        magrittr_1.5       MASS_7.3-45       
- [4] splines_3.3.1      pscl_1.4.9         munsell_0.4.3     
- [7] doParallel_1.0.10  lattice_0.20-33    SQUAREM_2016.8-2  
-[10] colorspace_1.2-6   foreach_1.4.3      stringr_1.0.0     
-[13] plyr_1.8.4         tools_3.3.1        parallel_3.3.1    
-[16] grid_3.3.1         gtable_0.2.0       iterators_1.0.8   
-[19] htmltools_0.3.5    yaml_2.1.13        digest_0.6.10     
-[22] reshape2_1.4.1     ggplot2_2.1.0      formatR_1.4       
-[25] codetools_0.2-14   evaluate_0.9       rmarkdown_0.9.6.14
-[28] stringi_1.1.1      scales_0.4.0       truncnorm_1.0-7   </code></pre>
+ [1] Rcpp_0.12.7       magrittr_1.5      MASS_7.3-45      
+ [4] splines_3.3.1     pscl_1.4.9        munsell_0.4.3    
+ [7] doParallel_1.0.10 lattice_0.20-34   SQUAREM_2016.8-2 
+[10] colorspace_1.2-7  foreach_1.4.3     stringr_1.1.0    
+[13] plyr_1.8.4        tools_3.3.1       parallel_3.3.1   
+[16] grid_3.3.1        gtable_0.2.0      iterators_1.0.8  
+[19] htmltools_0.3.5   yaml_2.1.13       assertthat_0.1   
+[22] digest_0.6.10     tibble_1.2        reshape2_1.4.2   
+[25] ggplot2_2.1.0     formatR_1.4       codetools_0.2-15 
+[28] evaluate_0.10     rmarkdown_1.1     stringi_1.1.2    
+[31] scales_0.4.0      truncnorm_1.0-7  </code></pre>
 </div>
 </div>
 
@@ -311,6 +313,7 @@ $(document).ready(function () {
 $(document).ready(function () {
   $('tr.header').parent('thead').parent('table').addClass('table table-condensed');
 });
+
 
 </script>
 
