@@ -26,24 +26,82 @@ plot_poisson_loglik=function(x,range1=1,range2=1,...){
 plot_poisson_loglik(0,main="x=0",range1=1,range2=5)
 plot_poisson_loglik(1,main="x=1")
 plot_poisson_loglik(2,main="x=2")
+plot_poisson_loglik(100,main="x=100")
 ```
 
 It looks, visually, like approximation is pretty good for even $x$ as small as $1$,
 but the zero case is the one that really is problematic.
 
+Notice that the $y$ axis for $x=100$ is 100 times bigger than $x=1$. This
+is easy to see why mathematically.
+
+Let $X \sim Poi(\lambda)$ and $l = \log(\lambda)$. Suppose we observe $X=x$.
+Let $l_0 = \log(x)$, which is the maximum likelihood estimate for $l$.
+
+Then the log likelihood ratio for $l$ vs $l_0$ is: 
+$$logLR = l(l) - l(l_0) = x (l-l_0) - (exp(l) - exp(l_0))$$
+$$ = x(\delta - exp(\delta) + 1)$$
+where $\delta = l-l_0$, and we have substituted $x=exp(l_0)$.
+
+
 Could probably improve $x=1,2$ cases by using a mixture of normals.
 
-Compare with usual approximation, X is N(lambda, lambda)
+Compare with usual approximation, X is N(lambda, lambda). CHECK THIS!
 ```{r}
 plot_poisson_loglik2=function(x,range1=1,range2=1,...){
   m = ifelse(x==0,0,x)
-  sd_approx = ifelse(x==0,0,x)
   l = log(m) + seq(-range1,range2,length=100)
   loglik = dpois(x,exp(l),log=TRUE)
   plot(l, loglik-max(loglik),type="l",...)
   abline(v=log(x))
-  normlik = log(dnorm(exp(l),m,sd=sd_approx))
+  normlik = log(dnorm(exp(l),m,sd=exp(l)))
   lines(l,normlik-max(normlik),col="red")
 }
+plot_poisson_loglik2(1,main="x=1")
+plot_poisson_loglik2(100,main="x=100")
+```
+
+
+```{r}
+n=20
+set.seed(1)
+x = rpois(n,1)
+y = ifelse(x==0,0.01,x)
+m = (y-1)/(2*y)   #this was an error, but seems to work curiously well...
+sd_approx = sqrt(1/(y)) 
+
+m = (y-1)
+sd_approx = rep(1,length(m))
+#m=ifelse(x==0,log(0.01),log(x))
+#sd_approx = ifelse(x==0,-m/sqrt(2),exp(m)^-0.5)
+l = seq(-1,1,length=100)
+loglik.pois = loglik.norm = matrix(0,nrow=n,ncol=100)
+for(i in 1:n){loglik.pois[i,] = dpois(x[i],exp(l),log=TRUE)}
+for(i in 1:n){loglik.norm[i,] = dnorm(m[i],l,sd=sd_approx[i],log=TRUE)}
+loglik.pois.tot = apply(loglik.pois,2,sum)
+loglik.norm.tot = apply(loglik.norm,2,sum)
+plot(l,loglik.pois.tot-max(loglik.pois.tot))
+lines(l,loglik.norm.tot-max(loglik.norm.tot),col=2)
+
+```
+
+
+```{r}
+n=200
+set.seed(1)
+x = rpois(n,10)
+
+lambda0  = mean(x)
+m = log(lambda0) + lambda0*(x-lambda0)
+sd_approx = rep(sqrt(1/lambda0),n)
+l = log(lambda0) + seq(-1,1,length=100)
+loglik.pois = loglik.norm = matrix(0,nrow=n,ncol=100)
+for(i in 1:n){loglik.pois[i,] = dpois(x[i],exp(l),log=TRUE)}
+for(i in 1:n){loglik.norm[i,] = dnorm(m[i],l,sd=sd_approx[i],log=TRUE)}
+loglik.pois.tot = apply(loglik.pois,2,sum)
+loglik.norm.tot = apply(loglik.norm,2,sum)
+plot(l,loglik.pois.tot-max(loglik.pois.tot))
+lines(l,loglik.norm.tot-max(loglik.norm.tot),col=2)
+
 ```
 
