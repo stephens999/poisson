@@ -1,6 +1,6 @@
 ---
 title: "Poisson"
-output: html_document
+output: workflowr::wflow_html
 ---
 
 Suppose $X$ is Poi($\lambda$).
@@ -43,8 +43,65 @@ $$logLR = l(l) - l(l_0) = x (l-l_0) - (exp(l) - exp(l_0))$$
 $$ = x(\delta - exp(\delta) + 1)$$
 where $\delta = l-l_0$, and we have substituted $x=exp(l_0)$.
 
-
 Could probably improve $x=1,2$ cases by using a mixture of normals.
+
+
+# What about a = log(1+lambda)
+
+To try and get around the issue at lambda=0 I consider
+the log-likelihood for a:=log(c+lambda) (the "log-plus-c or lpc-transform").
+
+The poisson loglikelihood is
+$$l(\lambda) = x \log(\lambda) - \lambda + const$$
+
+so substituting $\lambda= exp(a)-c$ gives:
+$$l(a) = x \log(\exp(a) - c) - \exp(a) + const$$
+
+The first derivative is 
+$$l'(a) = x \exp(a)/(\exp(a)-c) - \exp(a)$$
+and second derivative
+$$l''(a) = x ([\exp(a)-c]\exp(a) - \exp(a)^2)/(\exp(a)-c)^2 - \exp(a)$$
+$$l''(a)= -xc\exp(a)/(\exp(a)-c)^2 - \exp(a)$$
+
+Taylor series: 
+$$l(a) \approx l(a_0) + (a-a_0) l'(a_0) + 0.5(a-a_0)^2 l''(a_0)$$
+So from the coefficient of $a^2$ we get:
+$$1/\sigma^2 = -l''(a_0)$$ 
+
+And from the coefficient of $a$ we get
+$$\mu/\sigma^2 = l'(a_0) -a_0l''(a_0)$$
+
+so $$\mu = a_0 - l'(a_0)/l''(a_0)$$ 
+
+```{r}
+plot_poisson_loglik_lpc=function(x,c=1,range1=0,range2=2,...){
+  a0 = log(x+c)
+  l1 = ifelse(x>0,x * (exp(a0)/(exp(a0)-c)) - exp(a0), -exp(a0)) #first deriv
+  l2 = ifelse(x>0, -c*x*exp(a0)/(exp(a0)-c)^2 - exp(a0), -exp(a0)) # second deriv
+  s2 = -1/l2
+  m = a0 - l1/l2
+    
+  a = seq(range1,range2,length=1000)
+  loglik = dpois(x,abs(exp(a)-c),log=TRUE)
+  plot(a, loglik-max(loglik),type="l",...)
+  abline(v=log(x+c))
+  normlik = log(dnorm(a,m,sd=sqrt(s2)))
+  lines(a,normlik-max(normlik),col="red")
+}
+plot_poisson_loglik_lpc(0,main="x=0,c=1",range1=0,range2=1)
+plot_poisson_loglik_lpc(1,main="x=1,c=1",range1=0,range2=2)
+plot_poisson_loglik_lpc(2,main="x=2,c=1",range1=0,range2=2)
+
+ 
+ plot_poisson_loglik_lpc(0,0.5,main="x=0,c=0.5",range1=log(0.5),range2=log(0.5+1))
+ plot_poisson_loglik_lpc(1,0.5,main="x=1,c=0.5",range1=log(0.5),range2=log(0.5+4))
+ 
+plot_poisson_loglik_lpc(0,5,main="x=0,c=5",range1=log(5),range2=log(5)+1)
+plot_poisson_loglik_lpc(1,5,main="x=1,c=5",range1=log(5),range2=log(5+20))
+ 
+```
+
+# other stuff
 
 Compare with usual approximation, X is N(lambda, lambda). CHECK THIS!
 ```{r}
